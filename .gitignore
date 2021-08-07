@@ -1,3 +1,9 @@
+#self add in 2021-8-7 in nanjing
+.DS_Store
+.idea/
+cmake-build-debug/
+src/.DS_Store
+tutorial/.DS_Store
 # Prerequisites
 *.d
 
