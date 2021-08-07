@@ -15,6 +15,7 @@
 
   Authors: Wu Jiaxu (wujiaxu@sogou-inc.com)
            Li Yingxin (liyingxin@sogou-inc.com)
+           Liu Kai (liukaidx@sogou-inc.com)
 */
 
 #include <assert.h>
@@ -56,11 +57,12 @@ protected:
 	virtual void init_failed();
 	virtual bool finish_once();
 
-private:
-	bool need_redirect();
-	bool redirect_url(HttpResponse *client_resp);
+protected:
+	bool need_redirect(ParsedURI& uri);
+	bool redirect_url(HttpResponse *client_resp, ParsedURI& uri);
 	void set_empty_request();
 
+private:
 	int redirect_max_;
 	int redirect_count_;
 };
@@ -246,7 +248,7 @@ bool ComplexHttpTask::init_success()
 	return true;
 }
 
-bool ComplexHttpTask::redirect_url(HttpResponse *client_resp)
+bool ComplexHttpTask::redirect_url(HttpResponse *client_resp, ParsedURI& uri)
 {
 	if (redirect_count_ < redirect_max_)
 	{
@@ -265,23 +267,23 @@ bool ComplexHttpTask::redirect_url(HttpResponse *client_resp)
 		{
 			if (url[1] != '/')
 			{
-				if (uri_.port)
-					url = ':' + (uri_.port + url);
+				if (uri.port)
+					url = ':' + (uri.port + url);
 
-				url = "//" + (uri_.host + url);
+				url = "//" + (uri.host + url);
 			}
 
-			url = uri_.scheme + (':' + url);
+			url = uri.scheme + (':' + url);
 		}
 
-		URIParser::parse(url, uri_);
+		URIParser::parse(url, uri);
 		return true;
 	}
 
 	return false;
 }
 
-bool ComplexHttpTask::need_redirect()
+bool ComplexHttpTask::need_redirect(ParsedURI& uri)
 {
 	HttpRequest *client_req = this->get_req();
 	HttpResponse *client_resp = this->get_resp();
@@ -298,7 +300,7 @@ bool ComplexHttpTask::need_redirect()
 	case 301:
 	case 302:
 	case 303:
-		if (redirect_url(client_resp))
+		if (redirect_url(client_resp, uri))
 		{
 			if (strcasecmp(method, HttpMethodGet) != 0 &&
 				strcasecmp(method, HttpMethodHead) != 0)
@@ -313,7 +315,7 @@ bool ComplexHttpTask::need_redirect()
 
 	case 307:
 	case 308:
-		if (redirect_url(client_resp))
+		if (redirect_url(client_resp, uri))
 			return true;
 		else
 			break;
@@ -329,7 +331,7 @@ bool ComplexHttpTask::finish_once()
 {
 	if (this->state == WFT_STATE_SUCCESS)
 	{
-		if (need_redirect())
+		if (need_redirect(uri_))
 			this->set_redirect(uri_);
 		else if (this->state != WFT_STATE_SUCCESS)
 			this->disable_retry();

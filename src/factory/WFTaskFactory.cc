@@ -25,6 +25,53 @@
 #include "WFGlobal.h"
 #include "WFTaskFactory.h"
 
+class __WFTimerTask : public WFTimerTask
+{
+protected:
+	virtual int duration(struct timespec *value)
+	{
+		value->tv_sec = this->seconds;
+		value->tv_nsec = this->nanoseconds;
+		return 0;
+	}
+
+protected:
+	time_t seconds;
+	long nanoseconds;
+
+public:
+	__WFTimerTask(time_t seconds, long nanoseconds, CommScheduler *scheduler,
+				  timer_callback_t&& cb) :
+		WFTimerTask(scheduler, std::move(cb))
+	{
+		this->seconds = seconds;
+		this->nanoseconds = nanoseconds;
+	}
+};
+
+WFTimerTask *WFTaskFactory::create_timer_task(unsigned int microseconds,
+											  timer_callback_t callback)
+{
+	return new __WFTimerTask((time_t)(microseconds / 1000000),
+							 (long)(microseconds % 1000000 * 1000),
+							 WFGlobal::get_scheduler(),
+							 std::move(callback));
+}
+
+WFTimerTask *WFTaskFactory::create_timer_task(const std::string& name,
+											  unsigned int microseconds,
+											  timer_callback_t callback)
+{
+	return WFTaskFactory::create_timer_task(microseconds, std::move(callback));
+}
+
+WFTimerTask *WFTaskFactory::create_timer_task(time_t seconds, long nanoseconds,
+											  timer_callback_t callback)
+{
+	return new __WFTimerTask(seconds, nanoseconds, WFGlobal::get_scheduler(),
+							 std::move(callback));
+}
+
 class __WFCounterTask;
 
 struct __counter_node
@@ -293,18 +340,31 @@ void WFTaskFactory::count_by_name(const std::string& counter_name, unsigned int 
 	__CounterMap::get_instance()->count_n(counter_name, n);
 }
 
-WFDNSTask *WFTaskFactory::create_dns_task(const std::string& host,
-										  unsigned short port,
-										  dns_callback_t callback)
-{
-	auto *task = WFThreadTaskFactory<DNSInput, DNSOutput>::
-						create_thread_task(WFGlobal::get_dns_queue(),
-										   WFGlobal::get_dns_executor(),
-										   DNSRoutine::run,
-										   std::move(callback));
+/********MailboxTask*************/
 
-	task->get_input()->reset(host, port);
-	return task;
+class __WFMailboxTask : public WFMailboxTask
+{
+public:
+	__WFMailboxTask(size_t size, mailbox_callback_t&& cb) :
+		WFMailboxTask(new void *[size], size, std::move(cb))
+	{
+	}
+
+	virtual ~__WFMailboxTask()
+	{
+		delete []this->mailbox;
+	}
+};
+
+WFMailboxTask *WFTaskFactory::create_mailbox_task(size_t size,
+												  mailbox_callback_t callback)
+{
+	return new __WFMailboxTask(size, std::move(callback));
+}
+
+WFMailboxTask *WFTaskFactory::create_mailbox_task(mailbox_callback_t callback)
+{
+	return new WFMailboxTask(std::move(callback));
 }
 
 /********FileIOTask*************/

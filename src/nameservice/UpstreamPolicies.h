@@ -17,7 +17,7 @@
 */
 
 #ifndef _UPSTREAM_POLICIES_H_
-#define _UPSTREAM_POLICIES_H_ 
+#define _UPSTREAM_POLICIES_H_
 
 #include <pthread.h>
 #include <vector>
@@ -25,7 +25,7 @@
 #include "URIParser.h"
 #include "EndpointParams.h"
 #include "WFNameService.h"
-#include "WFDNSResolver.h"
+#include "WFDnsResolver.h"
 #include "WFGlobal.h"
 #include "WFTaskError.h"
 #include "WFServiceGovernance.h"
@@ -44,7 +44,6 @@ public:
 	EndpointGroup *group;
 	unsigned int consistent_hash[VIRTUAL_GROUP_SIZE];
 
-	UPSAddrParams();
 	UPSAddrParams(const struct AddressParams *params,
 				  const std::string& address);
 };
@@ -97,15 +96,36 @@ public:
 											WFNSTracing *tracing);
 
 protected:
+	virtual void add_server_locked(EndpointAddress *addr);
+	virtual int remove_server_locked(const std::string& address);
 	int total_weight;
 	int available_weight;
 
 private:
 	virtual void recover_one_server(const EndpointAddress *addr);
 	virtual void fuse_one_server(const EndpointAddress *addr);
+	static int select_history_weight(WFNSTracing *tracing);
+};
+
+class UPSVNSWRRPolicy : public UPSWeightedRandomPolicy
+{
+public:
+	UPSVNSWRRPolicy() : UPSWeightedRandomPolicy(false)
+	{
+		this->cur_idx = 0;
+		this->try_another = false;
+	};
+	const EndpointAddress *first_strategy(const ParsedURI& uri,
+										  WFNSTracing *tracing);
+
+private:
 	virtual void add_server_locked(EndpointAddress *addr);
 	virtual int remove_server_locked(const std::string& address);
-	static int select_history_weight(WFNSTracing *tracing);
+	void init();
+	void init_virtual_nodes();
+	std::vector<size_t> pre_generated_vec;
+	std::vector<size_t> current_weight_vec;
+	size_t cur_idx;
 };
 
 class UPSConsistentHashPolicy : public UPSGroupPolicy
@@ -152,7 +172,7 @@ public:
 	{
 		this->try_another = try_another;
 	}
-	
+
 	const EndpointAddress *first_strategy(const ParsedURI& uri,
 										  WFNSTracing *tracing);
 	const EndpointAddress *another_strategy(const ParsedURI& uri,
@@ -164,4 +184,3 @@ private:
 };
 
 #endif
-

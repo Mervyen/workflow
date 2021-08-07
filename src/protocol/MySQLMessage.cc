@@ -14,6 +14,7 @@
   limitations under the License.
 
   Authors: Wu Jiaxu (wujiaxu@sogou-inc.com)
+           Xie Han (xiehan@sogou-inc.com)
 */
 
 #include <sys/uio.h>
@@ -23,8 +24,9 @@
 #include <string>
 #include <openssl/sha.h>
 #include <utility>
-#include "MySQLMessage.h"
 #include "mysql_types.h"
+#include "MySQLResult.h"
+#include "MySQLMessage.h"
 
 namespace protocol
 {
@@ -172,18 +174,21 @@ std::string MySQLRequest::get_query() const
 
 int MySQLHandshakeResponse::encode(struct iovec vectors[], int max)
 {
-	const char empty13[13] = {0};
+	const char empty[11] = {0};
+	uint16_t cap_flags_lower = capability_flags_ & 0xffffffff;
+	uint16_t cap_flags_upper = capability_flags_ >> 16;
 
 	buf_.clear();
 	buf_.append((const char *)&protocol_version_, 1);
 	buf_.append(server_version_.c_str(), server_version_.size() + 1);
 	buf_.append((const char *)&connection_id_, 4);
 	buf_.append((const char *)auth_plugin_data_part_1_, 8);
-	buf_.append(empty13, 1);
-	buf_.append(empty13, 2);
+	buf_.append(empty, 1);
+	buf_.append((const char *)&cap_flags_lower, 2);
 	buf_.append((const char *)&character_set_, 1);
 	buf_.append((const char *)&status_flags_, 2);
-	buf_.append(empty13, 13);
+	buf_.append((const char *)&cap_flags_upper, 2);
+	buf_.append(empty, 11);
 	buf_.append((const char *)auth_plugin_data_part_2_, 12);
 	return this->MySQLMessage::encode(vectors, max);
 }
@@ -192,6 +197,8 @@ int MySQLHandshakeResponse::decode_packet(const unsigned char *buf, size_t bufle
 {
 	const unsigned char *end = buf + buflen;
 	const unsigned char *pos;
+	uint16_t cap_flags_lower;
+	uint16_t cap_flags_upper;
 
 	if (buflen == 0)
 		return -2;
@@ -226,12 +233,15 @@ int MySQLHandshakeResponse::decode_packet(const unsigned char *buf, size_t bufle
 	buf += 4;
 	memcpy(auth_plugin_data_part_1_, buf, 8);
 	buf += 9;
+	cap_flags_lower = uint2korr(buf);
 	buf += 2;
 	character_set_ = *buf++;
 	status_flags_ = uint2korr(buf);
 	buf += 2;
+	cap_flags_upper = uint2korr(buf);
 	buf += 13;
 	memcpy(auth_plugin_data_part_2_, buf, 12);
+	capability_flags_ = (cap_flags_upper << 16U) + cap_flags_lower;
 	return 1;
 }
 
@@ -340,6 +350,68 @@ void MySQLResponse::set_ok_packet()
 int MySQLResponse::decode_packet(const unsigned char *buf, size_t buflen)
 {
 	return mysql_parser_parse(buf, buflen, parser_);
+}
+
+unsigned long long MySQLResponse::get_affected_rows() const
+{
+	unsigned long long affected_rows = 0;
+	MySQLResultCursor cursor(this);
+
+	do {
+		affected_rows += cursor.get_affected_rows();
+	} while (cursor.next_result_set());
+
+	return affected_rows;
+}
+
+// return array api
+unsigned long long MySQLResponse::get_last_insert_id() const
+{
+	unsigned long long insert_id = 0;
+	MySQLResultCursor cursor(this);
+
+	do {
+		if (cursor.get_insert_id())
+			insert_id = cursor.get_insert_id();
+	} while (cursor.next_result_set());
+
+	return insert_id;
+}
+
+int MySQLResponse::get_warnings() const
+{
+	int warning_count = 0;
+	MySQLResultCursor cursor(this);
+
+	do {
+		warning_count += cursor.get_warnings();
+	} while (cursor.next_result_set());
+
+	return warning_count;
+}
+
+std::string MySQLResponse::get_info() const
+{
+	std::string info;
+	MySQLResultCursor cursor(this);
+
+	do {
+		if (info.length() > 0)
+			info += " ";
+		info += cursor.get_info();
+	} while (cursor.next_result_set());
+
+	return info;
+}
+
+bool MySQLResponse::is_ok_packet() const
+{
+	return parser_->packet_type == MYSQL_PACKET_OK;
+}
+
+bool MySQLResponse::is_error_packet() const
+{
+	return parser_->packet_type == MYSQL_PACKET_ERROR;
 }
 
 }
