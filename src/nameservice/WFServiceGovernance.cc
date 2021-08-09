@@ -20,7 +20,7 @@
 #include "URIParser.h"
 #include "StringUtil.h"
 #include "WFNameService.h"
-#include "WFDNSResolver.h"
+#include "WFDnsResolver.h"
 #include "WFServiceGovernance.h"
 #include "UpstreamManager.h"
 
@@ -127,13 +127,14 @@ WFRouterTask *WFServiceGovernance::create_router_task(const struct WFNSParams *p
 	if (this->select(params->uri, tracing, &addr) &&
 		copy_host_port(params->uri, addr))
 	{
+		WFDnsResolver *resolver = WFGlobal::get_dns_resolver();
 		unsigned int dns_ttl_default = addr->params->dns_ttl_default;
 		unsigned int dns_ttl_min = addr->params->dns_ttl_min;
 		const struct EndpointParams *endpoint_params = &addr->params->endpoint_params;
 		int dns_cache_level = params->retry_times == 0 ? DNS_CACHE_LEVEL_2 :
 														 DNS_CACHE_LEVEL_1;
-		task = this->create(params, dns_cache_level, dns_ttl_default, dns_ttl_min,
-							endpoint_params, std::move(callback));
+		task = resolver->create(params, dns_cache_level, dns_ttl_default, dns_ttl_min,
+								endpoint_params, std::move(callback));
 
 		if (!tracing->data)
 			tracing->data = addr;
@@ -226,11 +227,11 @@ void WFServiceGovernance::success(RouteManager::RouteResult *result,
 	else
 		server = (EndpointAddress *)tracing->data;
 
-	pthread_rwlock_rdlock(&this->rwlock);
+	pthread_rwlock_wrlock(&this->rwlock);
 	this->recover_server_from_breaker(server);
 	pthread_rwlock_unlock(&this->rwlock);
 
-	WFDNSResolver::success(result, tracing, target);
+	this->WFNSPolicy::success(result, tracing, target);
 }
 
 void WFServiceGovernance::failed(RouteManager::RouteResult *result,
@@ -246,14 +247,14 @@ void WFServiceGovernance::failed(RouteManager::RouteResult *result,
 	else
 		server = (EndpointAddress *)tracing->data;
 
-	pthread_rwlock_rdlock(&this->rwlock);
+	pthread_rwlock_wrlock(&this->rwlock);
 	size_t fail_count = ++server->fail_count;
 	if (fail_count == server->params->max_fails)
 		this->fuse_server_to_breaker(server);
 
 	pthread_rwlock_unlock(&this->rwlock);
 
-	WFDNSResolver::failed(result, tracing, target);
+	this->WFNSPolicy::failed(result, tracing, target);
 }
 
 void WFServiceGovernance::check_breaker()
@@ -428,7 +429,7 @@ int WFServiceGovernance::replace_server(const std::string& address,
 
 void WFServiceGovernance::enable_server(const std::string& address)
 {
-	pthread_rwlock_rdlock(&this->rwlock);
+	pthread_rwlock_wrlock(&this->rwlock);
 	const auto map_it = this->server_map.find(address);
 	if (map_it != this->server_map.cend())
 	{
@@ -440,7 +441,7 @@ void WFServiceGovernance::enable_server(const std::string& address)
 
 void WFServiceGovernance::disable_server(const std::string& address)
 {
-	pthread_rwlock_rdlock(&this->rwlock);
+	pthread_rwlock_wrlock(&this->rwlock);
 	const auto map_it = this->server_map.find(address);
 	if (map_it != this->server_map.cend())
 	{

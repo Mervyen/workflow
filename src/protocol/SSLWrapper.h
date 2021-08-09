@@ -27,7 +27,7 @@ namespace protocol
 
 class SSLHandshaker : public ProtocolMessage
 {
-protected:
+public:
 	virtual int encode(struct iovec vectors[], int max);
 	virtual int append(const void *buf, size_t *size);
 
@@ -36,24 +36,51 @@ protected:
 
 public:
 	SSLHandshaker(SSL *ssl) { this->ssl = ssl; }
+
+public:
+	SSLHandshaker(SSLHandshaker&& handshaker) = default;
+	SSLHandshaker& operator = (SSLHandshaker&& handshaker) = default;
 };
 
-class SSLWrapper : public ProtocolMessage
+class SSLWrapper : public ProtocolWrapper
 {
 protected:
 	virtual int encode(struct iovec vectors[], int max);
 	virtual int append(const void *buf, size_t *size);
 
 protected:
-	ProtocolMessage *msg;
+	virtual int feedback(const void *buf, size_t size);
+
+protected:
+	int append_message();
+
+protected:
 	SSL *ssl;
 
 public:
-	SSLWrapper(ProtocolMessage *msg, SSL *ssl)
+	SSLWrapper(ProtocolMessage *msg, SSL *ssl) : ProtocolWrapper(msg)
 	{
-		this->msg = msg;
 		this->ssl = ssl;
 	}
+
+public:
+	SSLWrapper(SSLWrapper&& wrapper) = default;
+	SSLWrapper& operator = (SSLWrapper&& wrapper) = default;
+};
+
+class ServiceSSLWrapper : public SSLWrapper
+{
+protected:
+	virtual int append(const void *buf, size_t *size);
+
+public:
+	ServiceSSLWrapper(ProtocolMessage *msg, SSL *ssl) : SSLWrapper(msg, ssl)
+	{
+	}
+
+public:
+	ServiceSSLWrapper(ServiceSSLWrapper&& wrapper) = default;
+	ServiceSSLWrapper& operator = (ServiceSSLWrapper&& wrapper) = default;
 };
 
 }

@@ -154,7 +154,7 @@ void CommTarget::deinit()
 	free(this->addr);
 }
 
-int CommMessageIn::feedback(const char *buf, size_t size)
+int CommMessageIn::feedback(const void *buf, size_t size)
 {
 	struct CommConnEntry *entry = this->entry;
 	int error;
@@ -306,7 +306,7 @@ CommSession::~CommSession()
 
 inline int Communicator::first_timeout(CommSession *session)
 {
-	int timeout = session->target->response_timeout;
+	int timeout = session->response_timeout();
 
 	if (timeout < 0 || (unsigned int)session->timeout <= (unsigned int)timeout)
 	{
@@ -322,7 +322,7 @@ inline int Communicator::first_timeout(CommSession *session)
 
 int Communicator::next_timeout(CommSession *session)
 {
-	int timeout = session->target->response_timeout;
+	int timeout = session->response_timeout();
 	struct timespec cur_time;
 	int time_used, time_left;
 
@@ -688,7 +688,7 @@ void Communicator::handle_incoming_reply(struct poller_result *res)
 	{
 		if (session)
 		{
-			target->release();
+			target->release(entry->state == CONN_STATE_IDLE);
 			session->handle(state, res->error);
 		}
 
@@ -810,7 +810,7 @@ void Communicator::handle_request_result(struct poller_result *res)
 	case PR_ST_STOPPED:
 			state = CS_STATE_STOPPED;
 
-		entry->target->release();
+		entry->target->release(0);
 		session->handle(state, res->error);
 		pthread_mutex_lock(&entry->mutex);
 		/* do nothing */
@@ -994,7 +994,7 @@ void Communicator::handle_connect_result(struct poller_result *res)
 	case PR_ST_STOPPED:
 			state = CS_STATE_STOPPED;
 
-		target->release();
+		target->release(0);
 		session->handle(state, res->error);
 		this->release_conn(entry);
 		break;
@@ -1496,6 +1496,7 @@ int Communicator::request(CommSession *session, CommTarget *target)
 	struct CommConnEntry *entry;
 	struct poller_data data;
 	int errno_bak;
+	int timeout;
 	int ret;
 
 	if (session->passive)
@@ -1520,7 +1521,8 @@ int Communicator::request(CommSession *session, CommTarget *target)
 			data.fd = entry->sockfd;
 			data.ssl = NULL;
 			data.context = entry;
-			if (mpoller_add(&data, target->connect_timeout, this->mpoller) >= 0)
+			timeout = session->connect_timeout();
+			if (mpoller_add(&data, timeout, this->mpoller) >= 0)
 				break;
 
 			this->release_conn(entry);

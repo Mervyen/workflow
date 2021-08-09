@@ -35,3 +35,6 @@ tutorial/.DS_Store
 *.exe
 *.out
 *.app
+
+# bazel env
+bazel-*

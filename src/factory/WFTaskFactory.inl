@@ -37,45 +37,6 @@
 #include "EndpointParams.h"
 #include "WFNameService.h"
 
-class __WFTimerTask : public WFTimerTask
-{
-protected:
-	virtual int duration(struct timespec *value)
-	{
-		*value = this->value;
-		return 0;
-	}
-
-protected:
-	struct timespec value;
-
-public:
-	__WFTimerTask(const struct timespec *value, CommScheduler *scheduler,
-				  timer_callback_t&& cb) :
-		WFTimerTask(scheduler, std::move(cb))
-	{
-		this->value = *value;
-	}
-};
-
-inline WFTimerTask *WFTaskFactory::create_timer_task(unsigned int microseconds,
-													 timer_callback_t callback)
-{
-	struct timespec value = {
-		.tv_sec		=	(time_t)(microseconds / 1000000),
-		.tv_nsec	=	(long)(microseconds % 1000000 * 1000)
-	};
-	return new __WFTimerTask(&value, WFGlobal::get_scheduler(),
-							 std::move(callback));
-}
-
-inline WFTimerTask *WFTaskFactory::create_timer_task(const std::string& name,
-													 unsigned int microseconds,
-													 timer_callback_t callback)
-{
-	return WFTaskFactory::create_timer_task(microseconds, std::move(callback));
-}
-
 class __WFGoTask : public WFGoTask
 {
 protected:
@@ -184,7 +145,7 @@ public:
 
 	TransportType get_transport_type() const { return type_; }
 
-	const ParsedURI *get_current_uri() const { return &uri_; }
+	virtual const ParsedURI *get_current_uri() const { return &uri_; }
 
 	void set_redirect(const ParsedURI& uri)
 	{
@@ -512,7 +473,9 @@ SubTask *WFComplexClientTask<REQ, RESP, CTX>::done()
 		auto&& cb = std::bind(&WFComplexClientTask::switch_callback,
 							  this,
 							  std::placeholders::_1);
-		WFTimerTask *timer = WFTaskFactory::create_timer_task(0, std::move(cb));
+		WFTimerTask *timer;
+
+		timer = WFTaskFactory::create_timer_task(0, 0, std::move(cb));
 		series->push_front(timer);
 	}
 	else
@@ -596,15 +559,6 @@ public:
 					std::function<void (WFMySQLTask *)>& process);
 };
 
-/**********Template Network Factory Sepcial**********/
-/*
-template<>
-inline WFHttpTask *
-WFNetworkTaskFactory<HttpRequest, HttpResponse>::create_server_task(std::function<void (WFHttpTask *)>& process)
-{
-	return WFServerTaskFactory::create_http_task(process);
-}
-*/
 /**********Template Thread Task Factory**********/
 
 template<class INPUT, class OUTPUT>
